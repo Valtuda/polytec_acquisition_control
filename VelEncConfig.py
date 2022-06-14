@@ -16,11 +16,9 @@ from polytec.io.item_list import ItemList
 #
 # - Bandwidth
 # - Tracking Filter
-# - Max. Acceleration*
 # - Range
 # - High Pass Filter
 # - Max. Velocity
-# - Optimum Range*
 #
 # For each of these variables we need a setter, getter, and a function that lists available modes.
 # We will follow the same path as in the DaqConfig class.
@@ -42,6 +40,8 @@ class VelEncConfig:
         self.__bandwidth = ItemList(self.__communication, DeviceType.VelocityDecoderDigital, DeviceCommand.Bandwidth)
         self.__range = ItemList(self.__communication, DeviceType.VelocityDecoderDigital, DeviceCommand.Range)
         self.__tracking_filter = ItemList(self.__communication, DeviceType.VelocityDecoderDigital, DeviceCommand.TrackingFilterRange)
+        self.__high_pass_filter = ItemList(self.__communication, DeviceType.VelocityDecoderDigital, DeviceCommand.HighPass)
+        self.__max_velocity_range = ItemList(self.__communication, DeviceType.VelocityDecoderDigital, DeviceCommand.MaximumVelocityRange)
 
     # Bandwidth
     @property
@@ -96,6 +96,42 @@ class VelEncConfig:
     def all_tracking_filter(self):
         """Gets all available settings for property Tracking Filter"""
         return self.__tracking_filter.available_items()
+    
+    # High Pass Filter
+    @property
+    def high_pass_filter(self):
+        """Gets the High Pass Filter"""
+        return self.__high_pass_filter.current_item()
+    
+    @high_pass_filter.setter
+    def high_pass_filter(self,new_value):
+        """Sets the High Pass Filter"""
+        if self.__high_pass_filter.is_item_available(new_value):
+            self.__high_pass_filter.set_current_item(new_value)
+        else:
+            raise ConfigurationError(f"High Pass Filter mode not available: {new_value}. Available values: {self.all_high_pass_filter()}.")
+    
+    def all_high_pass_filter(self):
+        """Gets all available settings for property High Pass Filter"""
+        return self.__high_pass_filter.available_items()
+    
+    # Maximum Velocity Range
+    @property
+    def max_velocity_range(self):
+        """Gets the Maximum Velocity Range"""
+        return self.__max_velocity_range.current_item()
+    
+    @max_velocity_range.setter
+    def max_velocity_range(self,new_value):
+        """Sets the Maximum Velocity Range"""
+        if self.__max_velocity_range.is_item_available(new_value):
+            self.__max_velocity_range.set_current_item(new_value)
+        else:
+            raise ConfigurationError(f"Maximum Velocity Range mode not available: {new_value}. Available values: {self.all_max_velocity_range()}.")
+    
+    def all_max_velocity_range(self):
+        """Gets all available settings for property Maximum Velocity Range"""
+        return self.__max_velocity_range.available_items()
     
 
 
