@@ -4,6 +4,8 @@
 
 # Modifications by Jasper Smits (2022):
 # - File renamed to DaqConfig to be in line with file name = class name.
+# - Added the init_connecton paramter to the class constructor. This prevents connection initialization from taking place so the library
+#   can be used as part of a class inheriting all config files.
 
 import logging
 
@@ -38,7 +40,7 @@ def log_config(daq_config):
 class DaqConfig:
     """Thd data acquisition configurator class is used to configure a device for a data acquisition"""
 
-    def __init__(self, device_communication):
+    def __init__(self, device_communication,init_connection = False):
         """
         Constructor
 
@@ -48,18 +50,22 @@ class DaqConfig:
         Raises:
              DeviceNotConnectedError, LibraryFunctionCallError
         """
-        # Some settings cannot be manipulated during an active data acquisition
-        ItemList(device_communication, DeviceType.SignalProcessing, DeviceCommand.OperationMode).set_current_item("Off")
+        if init_connection:
+            # Some settings cannot be manipulated during an active data acquisition
+            ItemList(device_communication, DeviceType.SignalProcessing, DeviceCommand.OperationMode).set_current_item("Off")
 
-        # initialize member variables
-        self.__communication = device_communication
+            # initialize member variables
+            self.__communication = device_communication
+
         self.__daq_mode = ItemList(self.__communication, DeviceType.SignalProcessing, DeviceCommand.DaqMode) \
             if self.__communication.has_command(DeviceType.SignalProcessing, DeviceCommand.DaqMode) else None
         self.__trigger_mode = ItemList(self.__communication, DeviceType.SignalProcessing, DeviceCommand.DaqTriggerMode)
         self.__trigger_edge = ItemList(self.__communication, DeviceType.SignalProcessing, DeviceCommand.DaqTriggerEdge)
         self.__analog_trigger_source = ItemList(self.__communication, DeviceType.SignalProcessing,
                                                 DeviceCommand.DaqAnalogTriggerSource)
-        self._channel_activation = ChannelActivation(self.__communication)
+        
+        if init_connection:
+            self._channel_activation = ChannelActivation(self.__communication)
 
     # DAQ Mode
     @property
