@@ -63,9 +63,7 @@ class DaqConfig:
         self.__trigger_edge = ItemList(self.__communication, DeviceType.SignalProcessing, DeviceCommand.DaqTriggerEdge)
         self.__analog_trigger_source = ItemList(self.__communication, DeviceType.SignalProcessing,
                                                 DeviceCommand.DaqAnalogTriggerSource)
-        
-        if init_connection:
-            self._channel_activation = ChannelActivation(self.__communication)
+        self._channel_activation = ChannelActivation(self.__communication)
 
     # DAQ Mode
     @property
