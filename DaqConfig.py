@@ -6,6 +6,7 @@
 # - File renamed to DaqConfig to be in line with file name = class name.
 # - Added the init_connecton paramter to the class constructor. This prevents connection initialization from taking place so the library
 #   can be used as part of a class inheriting all config files.
+# - Added DaqSampleRate and DaqBaseSampleRate as properties (daq_sample_rate and daq_base_sample_rate)
 
 import logging
 
@@ -271,6 +272,13 @@ class DaqConfig:
         else:
             return []
 
+    @property
+    def daq_sample_rate(self):
+        return self.__communication.get_int32(DeviceType.SignalProcessing, DeviceCommand.DaqSampleRate)
+
+    @property
+    def daq_base_sample_rate(self):
+        return self.__communication.get_int32(DeviceType.SignalProcessing, DeviceCommand.DaqBaseSampleRate)
 
 class ConfigurationError(Exception):
     """Exception class raised when trying to to setup an invalid configuration"""
