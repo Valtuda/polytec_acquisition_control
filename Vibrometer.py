@@ -138,7 +138,14 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig):
         active_channels = self.__get_active_channels()
         for ch_type,channel in active_channels.items():
             freq_factor = 1 if channel["Type"] == ChannelType.RSSI else self.__freq_factor()
-            active_channels[ch_type]["Samples"] = np.zeros((self.block_count,self.block_size*freq_factor))
+
+            if channel["Unit"] == "bool":
+                data_type = bool # 1 byte
+            else:
+                data_type = int # 4 bytes (=32bit)
+
+
+            active_channels[ch_type]["Samples"] = np.zeros((self.block_count,self.block_size*freq_factor),dtype=data_type)
             
             # If this is a measurement channel, also create the overrange array.
             if channel["Type"] in [ChannelType.Velocity, ChannelType.Displacement, ChannelType.Acceleration]:
