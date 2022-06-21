@@ -7,6 +7,7 @@
 # - Added the init_connecton paramter to the class constructor. This prevents connection initialization from taking place so the library
 #   can be used as part of a class inheriting all config files.
 # - Added DaqSampleRate and DaqBaseSampleRate as properties (daq_sample_rate and daq_base_sample_rate)
+# - Added as_dict() function to the class to output all properties 
 
 import logging
 
@@ -66,6 +67,24 @@ class DaqConfig:
                                                 DeviceCommand.DaqAnalogTriggerSource)
         self._channel_activation = ChannelActivation(self.__communication)
 
+    # Added by JS 2022
+    def to_dict(self):
+        """Dictionary representation of all properties set by this class."""
+        _dict = dict()
+        _dict["daq_mode"]               = self.daq_mode
+        _dict["block_count"]            = self.block_count
+        _dict["block_size"]             = self.block_size
+        _dict["trigger_mode"]           = self.trigger_mode
+        _dict["trigger_edge"]           = self.trigger_edge
+        _dict["analog_trigger_source"]  = self.analog_trigger_source
+        _dict["analog_trigger_level"]   = self.analog_trigger_level
+        _dict["gated_trigger"]          = self.gated_trigger
+        _dict["pre_post_trigger"]       = self.pre_post_trigger
+        _dict["daq_sample_rate"]        = self.daq_sample_rate
+        _dict["daq_base_sample_rate"]   = self.daq_base_sample_rate
+
+        return _dict
+    
     # DAQ Mode
     @property
     def daq_mode(self):
@@ -272,10 +291,12 @@ class DaqConfig:
         else:
             return []
 
+    # Added by JS 2022
     @property
     def daq_sample_rate(self):
         return self.__communication.get_int32(DeviceType.SignalProcessing, DeviceCommand.DaqSampleRate)
 
+    # Added by JS 2022
     @property
     def daq_base_sample_rate(self):
         return self.__communication.get_int32(DeviceType.SignalProcessing, DeviceCommand.DaqBaseSampleRate)

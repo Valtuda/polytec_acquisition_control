@@ -32,6 +32,17 @@ class MiscConfig:
 
         # This is empty, all settings are int16s which are accessed directly.
 
+    def to_dict(self):
+        """Dictionary representation of this class."""
+        _dict = dict()
+
+        # Some properties not included because they change from time to time (i.e. signal level is stored with the data)
+
+        _dict["qtec"] = self.qtec
+        _dict["focus_position"] = self.focus_position
+
+        return _dict
+
     # Autofocus, possibility to have this function block
     def autofocus(self,block=False):
         """Forces the Sensor head to autofocus"""

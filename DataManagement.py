@@ -6,9 +6,8 @@ import h5py
 import os
 
 class HDF5Writer:
-    self.__active_file = None
     def __init__(self):
-        pass
+        self.__active_file = None
 
     @property
     def active_file(self):

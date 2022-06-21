@@ -5,10 +5,9 @@
 from polytec.io.channel_activation import ChannelActivation
 from polytec.io.data_acquisition import DataAcquisition
 from polytec.io.channel_type import ChannelType
-from polytec.io.device_command import DeviceCommand
-from polytec.io.device_type import DeviceType
-from polytec.io.item_list import ItemList
-from polytec.io.miscellaneous_tag import MiscellaneousTag
+#from polytec.io.device_command import DeviceCommand
+#from polytec.io.device_type import DeviceType
+#from polytec.io.item_list import ItemList
 
 from polytec.io.device_communication import DeviceCommunication
 
@@ -61,10 +60,45 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
         self.__chunk_size     = 1000
         self.__acq_timeout    = 1000
 
+
     @staticmethod
     def from_ip(ip):
         """Constructor which creates the class from a provided IP address (string). No checks on validity of the IP."""
         return Vibrometer(DeviceCommunication(ip))
+
+    def to_dict(self):
+        """Dictionary representation of the Vibrometer state."""
+        daq_dict    = DaqConfig.to_dict(self)
+        velenc_dict = VelEncConfig.to_dict(self)
+        misc_dict   = MiscConfig.to_dict(self)
+
+        _dict = {**daq_dict,**velenc_dict,**misc_dict}
+
+        _dict["chunk_size"] = self.chunk_size
+        _dict["acq_timeout"] = self.acq_timeout
+        _dict["auto_af"] = self.auto_af
+
+        return _dict
+
+    def settings_from_dict(self,settings_dict):
+        """Set the properties of the vibrometer state from the dictionary. Coded out manually, since order matters."""
+
+        # A dictionary with all setable parameters.
+        property_dtype_dict = {"daq_mode": str,"block_count": int, "block_size": int, "trigger_mode": str,
+                "trigger_edge": str,"analog_trigger_source":str,"analog_trigger_level":float,"gated_trigger":bool,
+                "pre_post_trigger":int,"bandwidth":str,"range":str,"tracking_filter":str,"high_pass_filter":str,
+                "max_velocity_range":str,"qtec":bool,"chunk_size":int,"acq_timeout":int,"auto_af":bool}
+
+        for key in settings_dict:
+            if key in property_dtype_dict:
+                try:
+                    val = property_dtype_dict[key](settings_dict[key])
+                except:
+                    raise ValueError(f"Could not convert {key} to type {property_dtype_dict[key]}.")
+
+                setattr(self,key,val)
+
+
 
     # Need this to be a read-only property.
     @property
@@ -235,5 +269,3 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
     def write_data(self,filename):
         self.__write_metadata(self.vib_as_dict())
         self.__write_channel_data(self.__data)
-
-

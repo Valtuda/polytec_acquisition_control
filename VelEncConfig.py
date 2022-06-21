@@ -44,6 +44,18 @@ class VelEncConfig:
         self.__high_pass_filter = ItemList(self.__communication, DeviceType.VelocityDecoderDigital, DeviceCommand.HighPass)
         self.__max_velocity_range = ItemList(self.__communication, DeviceType.VelocityDecoderDigital, DeviceCommand.MaximumVelocityRange)
 
+    def to_dict(self):
+        """Dictionary representation of this class' properties."""
+        _dict = dict()
+
+        _dict["bandwidth"] =        self.bandwidth
+        _dict["range"] =            self.range
+        _dict["tracking_filter"] =  self.tracking_filter
+        _dict["high_pass_filter"]=  self.high_pass_filter
+        _dict["max_velocity_range"]=self.max_velocity_range
+
+        return _dict
+
     # Bandwidth
     @property
     def bandwidth(self):
