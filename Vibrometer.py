@@ -18,6 +18,7 @@ from acquire_to_csv import __wait_for_trigger as wait_for_trigger # acquisition,
 from DaqConfig import DaqConfig
 from VelEncConfig import VelEncConfig
 from MiscConfig import MiscConfig
+from DataManagement import HDF5Writer
 
 from threading import Thread
 
@@ -25,7 +26,7 @@ import numpy as np
 
 from time import sleep
 
-class Vibrometer(DaqConfig, VelEncConfig, MiscConfig):
+class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
     """This class controls all features of the vibrometer."""
 
     def __init__(self,dc):
@@ -229,4 +230,10 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig):
             self.__buffer = None
             self.__acquiring = False
             self.__ready_for_data = False
+
+    ### Data storage related functions, insofar they're not in the HDF5Writer class.
+    def write_data(self,filename):
+        self.__write_metadata(self.vib_as_dict())
+        self.__write_channel_data(self.__data)
+
 
