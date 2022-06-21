@@ -13,6 +13,7 @@ from polytec.io.miscellaneous_tag import MiscellaneousTag
 from polytec.io.device_communication import DeviceCommunication
 
 from acquire_to_csv import __get_active_channels as get_active_channels # Args: communication, acquisition
+from acquire_to_csv import __wait_for_trigger as wait_for_trigger # acquisition, self.trigger_mode
 
 from DaqConfig import DaqConfig
 from VelEncConfig import VelEncConfig
@@ -46,10 +47,63 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig):
         self.__acquiring  = False
         self.__buffer     = None
 
+        # Do we automatically autofocus before each acquisition?
+        self.__auto_af    = False
+
+        # Data will be copied from the buffer to here at the end of a run.
+        self.__data       = None
+        
+        # Are we ready for data? Read-only so internal param.
+        self.__ready_for_data = False
+
+        # Guess this requires another @property.
+        self.__chunk_size     = 1000
+        self.__acq_timeout    = 1000
+
     @staticmethod
     def from_ip(ip):
         """Constructor which creates the class from a provided IP address (string). No checks on validity of the IP."""
         return Vibrometer(DeviceCommunication(ip))
+
+    # Need this to be a read-only property.
+    @property
+    def ready_for_data(self):
+        return self.__ready_for_data
+
+    @property
+    def chunk_size(self):
+        return self.__chunk_size
+
+    @chunk_size.setter
+    def chunk_size(self,val):
+        if not isinstance(val,int):
+            raise ValueError("chunk_size must be an integer.")
+        elif val < 1:
+            raise ValueError("chunk_size must be larger than 1.")
+        self.__chunk_size = val
+
+    @property
+    def acq_timeout(self):
+        return self.__acq_timeout
+
+    @acq_timeout.setter
+    def acq_timeout(self,val):
+        if not isinstance(val,int):
+            raise ValueError("acq_timeout must be an integer.")
+        elif val < 1:
+            raise ValueError("acq_timeout must be larger than 1.")
+        self.__acq_timeout = val
+    @property
+    def auto_af(self):
+        return self.__auto_af
+
+    @auto_af.setter
+    def auto_af(self,val):
+        if val != True and val != False:
+            raise ValueError("auto_af needs to be either True or False.")
+        
+        self.__auto_af = val
+
 
     # Relevant configuration settings from daq config for acquisition.
     """
@@ -64,7 +118,7 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig):
         daq_config.pre_post_trigger = 1000  # actual signal channel samples not base samples
     """
 
-    def get_active_channels(self):
+    def __get_active_channels(self):
         """Exposes the acquire_from_csv function get_active_channels. Transforms it into a dict, easier to process later."""
         active_channels = get_active_channels(self.__communication,self.__acquisition)
         channels_dict   = dict()
@@ -79,12 +133,16 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig):
         """Calculate the factor stemming from sampling frequency."""
         return self.daq_sample_rate // self.daq_base_sample_rate
 
-    def generate_buffer(self,output=False):
+    def __generate_buffer(self,output=False):
         """Generated buffers in the "Samples" area of the provided active channels of get_active_channels."""
-        active_channels = self.get_active_channels()
+        active_channels = self.__get_active_channels()
         for ch_type,channel in active_channels.items():
             freq_factor = 1 if channel["Type"] == ChannelType.RSSI else self.__freq_factor()
             active_channels[ch_type]["Samples"] = np.zeros((self.block_count,self.block_size*freq_factor))
+            
+            # If this is a measurement channel, also create the overrange array.
+            if channel["Type"] in [ChannelType.Velocity, ChannelType.Displacement, ChannelType.Acceleration]:
+                active_channels[ch_type]["Overrange"] = np.zeros((self.block_count,self.block_size*freq_factor),dtype=bool)
 
         self.__buffer = active_channels
 
@@ -101,17 +159,67 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig):
             if not self._buffer == None:
                 raise RuntimeError("Buffer was defined before acquisition started. This should not be possible.")
 
+            ## Start data acquisition
+            self.__acquisition.start_data_acquisition()
+            self.__generate_buffer()
+
+            ## Do we want to auto af? If so, do a blocking AF
+            if self.__auto_af:
+                self.autofocus(block=True)
+
+            self.__ready_for_data = True
+
+            ## Main acquisition/data storage loop. Inspired by __acquire_data_to_csv from acquire_to_csv.
+            # Loop over blocks.
+            for block_id in range(self.block_count):
+                wait_for_trigger(self.__acquisition, self.trigger_mode)
+
+                # Polytec pulls the data off the device in chunks. I don't really see the need, but we'll mimick it.
+                samples_this_block = 0
+                while samples_this_block < self.block_size:
+                    # Read the chunk size, or at most what we still have to buffer
+                    read_this_loop = min(self.block_size - samples_this_block, self.__chunk_size)
+
+                    # Blocks until timeout is reached. read_this_loop in base sample frequency
+                    self.__acquisition.read_data(read_this_loop, self.__acq_timeout)
+
+                    # Fetch the data and write it to buffer
+                    for channel in active_channels:
+                        sample_count = self.__acquisition.extracted_sample_count(channel["Type"], channel["ID"])
+                        
+                        # Here we differ from the example code, writing it directly into the numpy array.
+                        channel["Samples"][block_id, samples_this_block:samples_this_block+sample_count] = \
+                                self.__acquisition.get_int32_data(channel["Type"],channel["ID"],sample_count)
+
+                        # If we are on a "measurement" channel, register overrange too
+                        if channel["Type"] in [ChannelType.Velocity, ChannelType.Displacement, ChannelType.Acceleration]:
+                            channel["Overrange"][block_id, samples_this_block:samples_this_block+sample_count] = \
+                                    self.__acquisition.get_overrange(channel["Type"],channel["ID"],sample_count)
+
+                    # Here Polytec goes on to write the chunks to csv, but we don't do that.
+                    # (also, why do they do that? I/O during data acq is a big no-no)
+                    # We do need to update the number of samples written this block.
+                    # Note that we update with read_this_loop, since we're tracking the base sample rate.
+                    samples_this_block += read_this_loop
+
+            # The above should wrap up the main acquisition loop. We haven't stored any data yet.
+            # Let's tell the device it can stop acquiring.
+            self.__acquisition.stop_data_acquisition()
+
             ## Do the acquisition thing.
             # This comes down to:
-            # - Reserve memory (dict with numpy arrays in it)
-            # - Start the acquisition
-            # - Wait for the trigger
-            # - As data comes in, write it to memory (Maybe the lib already does this? Don't know, we'll handle it here.)
+            # x Reserve memory (dict with numpy arrays in it)
+            # x Start the acquisition
+            # x Wait for the trigger
+            # x As data comes in, write it to memory (Maybe the lib already does this? Don't know, we'll handle it here.)
             #   - As for structuring the buffer: Each channel can have a different sample rate (DaqRate / DaqBaseRate)
             #     so we will store the data as ... / <channelname> / <number of block>
 
-            # 'pass' won't really do here
+            # The above is slightly outdated but leaving it there for now
 
+            # Set the buffer back to None. Set acquiring to false.
+            self.__data = self.__buffer
             self.__buffer = None
             self.__acquiring = False
+            self.__ready_for_data = False
 
