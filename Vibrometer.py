@@ -128,6 +128,7 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
         elif val < 1:
             raise ValueError("acq_timeout must be larger than 1.")
         self.__acq_timeout = val
+    
     @property
     def auto_af(self):
         return self.__auto_af
@@ -266,6 +267,10 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
             self.__ready_for_data = False
 
     ### Data storage related functions, insofar they're not in the HDF5Writer class.
-    def write_data(self,filename):
-        self.__write_metadata(self.vib_as_dict())
+    def write_data(self,filename,_dict=dict()):
+        """Write data to the disk."""
+        _dict["vibrometer"] = self.to_dict()
         self.__write_channel_data(self.__data)
+
+        # Dereference the data point and garbage coll. will get it.
+        self.__data = None
