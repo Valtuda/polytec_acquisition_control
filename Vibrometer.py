@@ -11,13 +11,13 @@ from polytec.io.channel_type import ChannelType
 
 from polytec.io.device_communication import DeviceCommunication
 
-from acquire_to_csv import __get_active_channels as get_active_channels # Args: communication, acquisition
-from acquire_to_csv import __wait_for_trigger as wait_for_trigger # acquisition, self.trigger_mode
+from .acquire_to_csv import __get_active_channels as get_active_channels # Args: communication, acquisition
+from .acquire_to_csv import __wait_for_trigger as wait_for_trigger # acquisition, self.trigger_mode
 
-from DaqConfig import DaqConfig
-from VelEncConfig import VelEncConfig
-from MiscConfig import MiscConfig
-from DataManagement import HDF5Writer
+from .DaqConfig import DaqConfig
+from .VelEncConfig import VelEncConfig
+from .MiscConfig import MiscConfig
+from .DataManagement import HDF5Writer
 
 from threading import Thread
 
