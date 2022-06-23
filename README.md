@@ -6,3 +6,9 @@ This requres the Python polytec package provided by Polytec GmbH, Waldbrunn unde
 
 # Functionality
 In flux right now. Trying to expose most key features to data acquisition and device setting in a series of classes, to be merged into a single class which will be able to link to other control software.
+
+# Copyright Notice
+Parts (c) 2021 Polytec GmbH, Waldbrunn:
+This package is based on parts of the example code provided by Polytec GmbH, Waldbrunn with every vibrometer, and uses the polytec Python library based on the Device Communication software also released by Polytec GmbH, Waldbrunn, under the LGPLv3.
+
+Unless mentioned otherwise, (c) 2022 Jasper Smits, released under LGPLv3
