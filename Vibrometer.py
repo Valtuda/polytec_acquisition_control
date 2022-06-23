@@ -60,6 +60,9 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
         self.__chunk_size     = 1000
         self.__acq_timeout    = 1000
 
+        # Start the acq thread.
+        self.__acquisition_thread.start()
+
 
     @staticmethod
     def from_ip(ip):
@@ -214,17 +217,17 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
                 sleep(0.1)
             
             ## At the start of the acquisition, the buffer has to be empty
-            if not self._buffer == None:
+            if not self.__buffer == None:
                 raise RuntimeError("Buffer was defined before acquisition started. This should not be possible.")
 
-            ## Start data acquisition
-            self.__acquisition.start_data_acquisition()
             self.__generate_buffer()
 
             ## Do we want to auto af? If so, do a blocking AF
             if self.__auto_af:
                 self.autofocus(block=True)
 
+            ## Start data acquisition
+            self.__acquisition.start_data_acquisition()
             self.__ready_for_data = True
 
             ## Main acquisition/data storage loop. Inspired by __acquire_data_to_csv from acquire_to_csv.
