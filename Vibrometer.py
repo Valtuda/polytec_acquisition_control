@@ -198,7 +198,14 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
         if block:
             while not self.__ready_for_data:
                 sleep(0.1)
-        
+    
+    def stop_acq(self):
+        """Stop the acquisition. Some stuff to deal with the acquisition being ended prematurely."""
+        if self.__acquiring:
+            self.__acquiring = False
+            return False
+        else:
+            return True
 
     ### The part below deals with data acquisition, including the data acquisition loop.
     def __acquisition_loop(self):
@@ -223,6 +230,9 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
             ## Main acquisition/data storage loop. Inspired by __acquire_data_to_csv from acquire_to_csv.
             # Loop over blocks.
             for block_id in range(self.block_count):
+                if not self.__acquiring:
+                    raise Exception("Acquisition halted prematurely, no data will be saved.")
+
                 wait_for_trigger(self.__acquisition, self.trigger_mode)
 
                 # Polytec pulls the data off the device in chunks. I don't really see the need, but we'll mimick it.
