@@ -191,6 +191,14 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
 
         if output:
             return self.__buffer
+    
+    def start_acq(self,block=False):
+        """Start the acquisition. Call after all settings are set. When block is true, will pause until ready for data."""
+        self.__acquiring = True
+        if block:
+            while not self.__ready_for_data:
+                sleep(0.1)
+        
 
     ### The part below deals with data acquisition, including the data acquisition loop.
     def __acquisition_loop(self):
