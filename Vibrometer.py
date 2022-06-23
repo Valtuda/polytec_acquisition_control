@@ -57,8 +57,8 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
         self.__ready_for_data = False
 
         # Guess this requires another @property.
-        self.__chunk_size     = 1000
-        self.__acq_timeout    = 1000
+        self.__chunk_size     = 1
+        self.__acq_timeout    = 100
 
         # Start the acq thread.
         self.__acquisition_thread.start()
@@ -236,28 +236,33 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
                 if not self.__acquiring:
                     raise Exception("Acquisition halted prematurely, no data will be saved.")
 
+                freq_factor = self.__freq_factor()
+                block_size  = self.block_size
+
                 wait_for_trigger(self.__acquisition, self.trigger_mode)
 
                 # Polytec pulls the data off the device in chunks. I don't really see the need, but we'll mimick it.
                 samples_this_block = 0
-                while samples_this_block < self.block_size:
+                while samples_this_block < block_size:
+
                     # Read the chunk size, or at most what we still have to buffer
-                    read_this_loop = min(self.block_size - samples_this_block, self.__chunk_size)
+                    read_this_loop = min(block_size - samples_this_block, self.__chunk_size)
 
                     # Blocks until timeout is reached. read_this_loop in base sample frequency
                     self.__acquisition.read_data(read_this_loop, self.__acq_timeout)
 
                     # Fetch the data and write it to buffer
-                    for channel in active_channels:
+                    for ch_name,channel in self.__buffer.items():
+                        start_index = samples_this_block if channel["Type"] == ChannelType.RSSI else freq_factor
                         sample_count = self.__acquisition.extracted_sample_count(channel["Type"], channel["ID"])
-                        
+
                         # Here we differ from the example code, writing it directly into the numpy array.
-                        channel["Samples"][block_id, samples_this_block:samples_this_block+sample_count] = \
+                        self.__buffer[ch_name]["Samples"][block_id, start_index:start_index+sample_count] = \
                                 self.__acquisition.get_int32_data(channel["Type"],channel["ID"],sample_count)
 
                         # If we are on a "measurement" channel, register overrange too
                         if channel["Type"] in [ChannelType.Velocity, ChannelType.Displacement, ChannelType.Acceleration]:
-                            channel["Overrange"][block_id, samples_this_block:samples_this_block+sample_count] = \
+                            self.__buffer[ch_name]["Overrange"][block_id, start_index:start_index+sample_count] = \
                                     self.__acquisition.get_overrange(channel["Type"],channel["ID"],sample_count)
 
                     # Here Polytec goes on to write the chunks to csv, but we don't do that.
@@ -265,6 +270,10 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
                     # We do need to update the number of samples written this block.
                     # Note that we update with read_this_loop, since we're tracking the base sample rate.
                     samples_this_block += read_this_loop
+
+                # Go to the next data block
+                self.__acquisition.next_data_acquisition_block()
+    
 
             # The above should wrap up the main acquisition loop. We haven't stored any data yet.
             # Let's tell the device it can stop acquiring.
@@ -290,8 +299,12 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
     ### Data storage related functions, insofar they're not in the HDF5Writer class.
     def write_data(self,filename,_dict=dict()):
         """Write data to the disk."""
+        if self.__data == None:
+            raise Exception("No data available for writing.")
+
         _dict["vibrometer"] = self.to_dict()
-        self.__write_channel_data(self.__data)
+        self.write_channel_data(self.__data)
+        self.write_metadata(_dict)
 
         # Dereference the data point and garbage coll. will get it.
         self.__data = None

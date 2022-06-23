@@ -31,10 +31,10 @@ class HDF5Writer:
     # Take (to be produced) dict-of-dicts which stores all setting data.
     # Store the executed script (this is not yet possible, and more of a feature of the entire control software, we will have to see how we do this.)
 
-    def __write_channel_data(self,channel_data):
+    def write_channel_data(self,channel_data):
         """Takes a set of channel_data as from the generate_buffers() of the Vibrometer class. Writes it to file as described above."""
 
-        for ch_name,channel in channel_data:
+        for ch_name,channel in channel_data.items():
             if channel["Overrange"] is not None:
                 has_overrange = True
 
@@ -68,7 +68,7 @@ class HDF5Writer:
                     overrange_dataset = overrange_grp.create_dataset(f"{num}",(num_samples,),dtype="b")
                     overrange_dataset[:] = channel["Overrange"][num,:]
     
-    def __write_metadata(self,dict_of_dicts):
+    def write_metadata(self,dict_of_dicts):
         """A very inflexible function to write metadata from a dictionary of dictionaries."""
         for _key,_dict in dict_of_dicts.items():
             for _skey,_item in _dict:
