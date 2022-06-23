@@ -7,12 +7,12 @@ import os
 
 class HDF5Writer:
     def __init__(self):
-        self.__active_file = None
+        self._active_file = None
 
     @property
     def active_file(self):
-        if self.__active_file:
-            return f.filename
+        if self._active_file:
+            return self._active.filename
         else:
             raise ValueError("No active file.")
 
@@ -20,11 +20,11 @@ class HDF5Writer:
         if (not overwrite) and os.path.exists(filename):
             return IOError(f"File {filename} exists. Turn on overwrite or choose another file.")
 
-        self.__active_file = h5py.File(filename, "w")
+        self._active_file = h5py.File(filename, "w")
 
     def close_file(self):
-        self.__active_file.close()
-        self.__active_file = None
+        self._active_file.close()
+        self._active_file = None
 
     ## Writing part, what does it have to do?
     # Take channel data, and write it into a HDF5 structure ( <channel> / <run_num>, also include <channel>/<avg> ), include metadata
@@ -37,8 +37,10 @@ class HDF5Writer:
         for ch_name,channel in channel_data.items():
             if channel["Overrange"] is not None:
                 has_overrange = True
+            else:
+                has_overrange = False
 
-            ch_grp = f.create_group("/"+ch_name)
+            ch_grp = self._active_file.create_group("/"+ch_name)
             if has_overrange:
                 overrange_grp = ch_grp.create_group("overrange")
 
@@ -71,7 +73,7 @@ class HDF5Writer:
     def write_metadata(self,dict_of_dicts):
         """A very inflexible function to write metadata from a dictionary of dictionaries."""
         for _key,_dict in dict_of_dicts.items():
-            for _skey,_item in _dict:
-                f[_key+"__"+_skey] = _item
+            for _skey,_item in _dict.items():
+                self._active_file[_key+"__"+_skey] = _item
 
 

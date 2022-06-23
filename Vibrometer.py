@@ -39,6 +39,7 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
         DaqConfig.__init__(self,dc,True)
         VelEncConfig.__init__(self,dc,True)
         MiscConfig.__init__(self,dc,True)
+        HDF5Writer.__init__(self)
 
         # Below deals with data acquisition
         self.__acquisition = DataAcquisition(dc,10000000)
@@ -57,12 +58,15 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
         self.__ready_for_data = False
 
         # Guess this requires another @property.
-        self.__chunk_size     = 1
+        self.__chunk_size     = 1000
         self.__acq_timeout    = 100
 
         # Start the acq thread.
         self.__acquisition_thread.start()
 
+    def __del__(self):
+        self.__acq_loop = False
+        self.__acquisition_thread.join()
 
     @staticmethod
     def from_ip(ip):
@@ -198,6 +202,7 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
     def start_acq(self,block=False):
         """Start the acquisition. Call after all settings are set. When block is true, will pause until ready for data."""
         self.__acquiring = True
+
         if block:
             while not self.__ready_for_data:
                 sleep(0.1)
@@ -213,8 +218,11 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
     ### The part below deals with data acquisition, including the data acquisition loop.
     def __acquisition_loop(self):
         while self.__acq_loop:
-            while not self.__acquiring:
+            while (not self.__acquiring) and (self.__acq_loop):
                 sleep(0.1)
+
+            if not self.__acq_loop:
+                break
             
             ## At the start of the acquisition, the buffer has to be empty
             if not self.__buffer == None:
@@ -240,10 +248,13 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
                 block_size  = self.block_size
 
                 wait_for_trigger(self.__acquisition, self.trigger_mode)
-
+            
                 # Polytec pulls the data off the device in chunks. I don't really see the need, but we'll mimick it.
                 samples_this_block = 0
                 while samples_this_block < block_size:
+                    # Debug thing
+                    print(f"Block {block_id}, Samples: {samples_this_block}/{block_size}.")
+
 
                     # Read the chunk size, or at most what we still have to buffer
                     read_this_loop = min(block_size - samples_this_block, self.__chunk_size)
@@ -253,7 +264,7 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
 
                     # Fetch the data and write it to buffer
                     for ch_name,channel in self.__buffer.items():
-                        start_index = samples_this_block if channel["Type"] == ChannelType.RSSI else freq_factor
+                        start_index = samples_this_block if channel["Type"] == ChannelType.RSSI else freq_factor*samples_this_block
                         sample_count = self.__acquisition.extracted_sample_count(channel["Type"], channel["ID"])
 
                         # Here we differ from the example code, writing it directly into the numpy array.
@@ -297,14 +308,17 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
             self.__ready_for_data = False
 
     ### Data storage related functions, insofar they're not in the HDF5Writer class.
-    def write_data(self,filename,_dict=dict()):
+    def write_data(self,filename,_dict=dict(),overwrite=False):
         """Write data to the disk."""
         if self.__data == None:
             raise Exception("No data available for writing.")
 
         _dict["vibrometer"] = self.to_dict()
+
+        self.open_file(filename,overwrite=overwrite)
         self.write_channel_data(self.__data)
         self.write_metadata(_dict)
+        self.close_file()
 
         # Dereference the data point and garbage coll. will get it.
         self.__data = None
