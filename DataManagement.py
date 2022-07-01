@@ -125,4 +125,35 @@ class HDF5Reader(h5py.File):
                 _dict[split_key[0]][split_key[1]] = self[key][()] 
 
         return _dict
-                
+    
+    def write_si_data_file(self):
+        """To share data, it can be desirable to have a file to share in SI units, we'll still use hdf5.
+
+        We write:
+        - Time
+        - BaseTime
+        - Velocity/<num>
+        - Overrange/<num>
+        - RSSI/<num>
+        - Trigger/<num>
+
+        - Metadata saved in metadata/<type>/<variable>"""
+
+        _file = h5py.File(self.filename+".si","w")
+
+        _file["Time"] = self.generate_t_array()
+        _file["BaseTime"] = self.generate_t_array(False)
+
+        for num in range(self._block_count):
+            _file[f"Velocity/{num}"] = self[f"Velocity/{num}"][()] * self["Velocity/scalefactor"][()]
+            _file[f"Overrange/{num}"] = self[f"Velocity/overrange/{num}"][()]
+            _file[f"RSSI/{num}"] = self[f"RSSI/{num}"][()] * self["RSSI/scalefactor"][()]
+            _file[f"Trigger/{num}"] = self[f"Trigger/{num}"][()]
+
+        # Now the metadata
+        for key,_dict in self.metadata.items():
+            for key2,value2 in _dict.items():
+                _file[f"metadata/{key}/{key2}"] = value2
+
+        _file.close()
+        del _file
