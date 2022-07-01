@@ -91,6 +91,8 @@ class HDF5Reader(h5py.File):
         self._sample_rate   = self._base_sample_rate/self._freq_factor
         self._block_count  = self["vibrometer__block_count"][()]
 
+        self._metadata = self.__reconstruct_dict()
+
     @property
     def average_velocity(self):
         arr = np.zeros(self._total_samples,dtype=float)
@@ -98,6 +100,10 @@ class HDF5Reader(h5py.File):
             arr += self.velocity(it)
 
         return arr/self._block_count
+
+    @property
+    def metadata(self):
+        return self._metadata
 
     def generate_t_array(self,freq_factor=True):
         if freq_factor:
@@ -109,4 +115,14 @@ class HDF5Reader(h5py.File):
         """Output the velocity of a specific run number, scaled to the proper SI units."""
         return self[f"Velocity/{num}"][()] * self["Velocity/scalefactor"][()]
 
+    def __reconstruct_dict(self):
+        _dict = dict()
+        for key in self.keys():
+            split_key = key.split("__")
+            if len(split_key)>1:
+                if not split_key[0] in _dict:
+                    _dict[split_key[0]] = dict()
+                _dict[split_key[0]][split_key[1]] = self[key][()] 
 
+        return _dict
+                
