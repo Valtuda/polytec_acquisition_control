@@ -80,7 +80,7 @@ class HDF5Writer:
 
 
 class HDF5Reader(h5py.File):
-    """A class to deal with conversion of data from the HDF5Writer. Unpacks the metadata back into the dict-of-dicts format. Converts data to SI units in a convenient way. One instance per file, wraps around the HDF5 reader, basically."""
+    """A class to deal with conversion of data from the HDF5Writer. Unpacks the metadata back into the dict-of-dicts format. Converts data to SI units in a convenient way. One instance per file, wraps around the HDF5 reader, basically. Based on the h5py.File class."""
     def __init__(self,filename,**kwargs):
         super().__init__(filename,"r",**kwargs)
         self._freq_factor = self["vibrometer__daq_sample_rate"][()]//self["vibrometer__daq_base_sample_rate"][()]
