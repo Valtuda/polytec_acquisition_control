@@ -5,6 +5,8 @@
 import h5py
 import os
 
+import numpy as np
+
 class HDF5Writer:
     def __init__(self):
         self._active_file = None
@@ -75,5 +77,36 @@ class HDF5Writer:
         for _key,_dict in dict_of_dicts.items():
             for _skey,_item in _dict.items():
                 self._active_file[_key+"__"+_skey] = _item
+
+
+class HDF5Reader(h5py.File):
+    """A class to deal with conversion of data from the HDF5Writer. Unpacks the metadata back into the dict-of-dicts format. Converts data to SI units in a convenient way. One instance per file, wraps around the HDF5 reader, basically."""
+    def __init__(self,filename,**kwargs):
+        super().__init__(filename,"r",**kwargs)
+        self._freq_factor = self["vibrometer__daq_sample_rate"][()]//self["vibrometer__daq_base_sample_rate"][()]
+        self._pre_post_trig = self["vibrometer__pre_post_trigger"][()]
+        self._base_samples  = self["vibrometer__block_size"][()]
+        self._total_samples = self._base_samples * self._freq_factor
+        self._base_sample_rate  = self["vibrometer__daq_base_sample_rate"][()]
+        self._sample_rate   = self._base_sample_rate/self._freq_factor
+        self._block_count  = self["vibrometer__block_count"][()]
+
+    @property
+    def average_velocity(self):
+        arr = np.zeros(self._total_samples,dtype=float)
+        for it in range(self._block_count):
+            arr += self.velocity(it)
+
+        return arr/self._block_count
+
+    def generate_t_array(self,freq_factor=True):
+        if freq_factor:
+            return ( np.arange(self._total_samples * self._freq_factor) - self._pre_post_trig ) / self._sample_rate
+        else:
+            return ( np.arange(self._total_samples) - self._pre_post_trig//self._freq_factor ) / self._base_sample_rate
+
+    def velocity(self,num):
+        """Output the velocity of a specific run number, scaled to the proper SI units."""
+        return self[f"Velocity/{num}"][()] * self["Velocity/scalefactor"][()]
 
 
