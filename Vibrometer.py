@@ -222,7 +222,7 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
                 sleep(0.1)
 
             if not self.__acq_loop:
-                break
+                return
             
             ## At the start of the acquisition, the buffer has to be empty
             if not self.__buffer == None:
