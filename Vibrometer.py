@@ -222,6 +222,7 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
                 sleep(0.1)
 
             if not self.__acq_loop:
+                print("Dropping out of acq loop.")
                 return
             
             ## At the start of the acquisition, the buffer has to be empty
@@ -238,22 +239,28 @@ class Vibrometer(DaqConfig, VelEncConfig, MiscConfig, HDF5Writer):
             self.__acquisition.start_data_acquisition()
             self.__ready_for_data = True
 
+            print("Ready for data.")
+
             ## Main acquisition/data storage loop. Inspired by __acquire_data_to_csv from acquire_to_csv.
             # Loop over blocks.
             for block_id in range(self.block_count):
+                #print(f"Entering block {block_id}.")
+
                 if not self.__acquiring:
                     raise Exception("Acquisition halted prematurely, no data will be saved.")
 
                 freq_factor = self.__freq_factor()
                 block_size  = self.block_size
-
+                
+                #print("Waiting for trigger.")
                 wait_for_trigger(self.__acquisition, self.trigger_mode)
+                #print("Past wait for trigger.")
             
                 # Polytec pulls the data off the device in chunks. I don't really see the need, but we'll mimick it.
                 samples_this_block = 0
                 while samples_this_block < block_size:
                     # Debug thing
-                    print(f"Block {block_id}, Samples: {samples_this_block}/{block_size}.")
+                    #print(f"Block {block_id}, Samples: {samples_this_block}/{block_size}.")
 
 
                     # Read the chunk size, or at most what we still have to buffer

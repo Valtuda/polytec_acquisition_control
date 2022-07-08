@@ -157,3 +157,8 @@ class HDF5Reader(h5py.File):
 
         _file.close()
         del _file
+
+def series_to_one_file(self,date,shortname,param_range):
+    """To convert a series of measurements to a single file, reducing everything to SI units like in the above code."""
+
+
