@@ -145,6 +145,8 @@ class HDF5Reader(h5py.File):
         _file["BaseTime"] = self.generate_t_array(False)
 
         for num in range(self._block_count):
+            _file[f"Time"] = self.generate_t_array()
+            _file[f"BaseTime"] = self.generate_t_array(freq_factor=False)
             _file[f"Velocity/{num}"] = self[f"Velocity/{num}"][()] * self["Velocity/scalefactor"][()]
             _file[f"Overrange/{num}"] = self[f"Velocity/overrange/{num}"][()]
             _file[f"RSSI/{num}"] = self[f"RSSI/{num}"][()] * self["RSSI/scalefactor"][()]
@@ -158,7 +160,44 @@ class HDF5Reader(h5py.File):
         _file.close()
         del _file
 
-def series_to_one_file(self,date,shortname,param_range):
+def series_to_one_file(location,prefix,param_range,postfix=".hdf5"):
     """To convert a series of measurements to a single file, reducing everything to SI units like in the above code."""
+    filename = f"{location}/{prefix}{postfix}"
+
+    _file = h5py.File(filename,"w")
+
+    first = True
+
+    # For each param, we open the file and load the relevant data.
+    for param in param_range:
+        file_loc = f"{location}/{prefix}_{param}{postfix}"
+        subgroup = _file.create_group(f"{param}")
+
+        read_file = HDF5Reader(file_loc)
+
+        for num in range(read_file["vibrometer__block_count"][()]):
+            subgroup[f"Velocity/{num}"] = read_file[f"Velocity/{num}"][()] * read_file["Velocity/scalefactor"][()]
+            subgroup[f"Overrange/{num}"] = read_file[f"Velocity/overrange/{num}"][()]
+            subgroup[f"RSSI/{num}"] = read_file[f"RSSI/{num}"][()] * read_file["RSSI/scalefactor"][()]
+            subgroup[f"Trigger/{num}"] = read_file[f"Trigger/{num}"][()]
+
+        subgroup[f"Time"] = read_file.generate_t_array()
+        subgroup[f"BaseTime"] = read_file.generate_t_array(freq_factor=False)
+        subgroup[f"avgVelocity"] = read_file.average_velocity
+
+        if first:
+            first = False
+            # Now the metadata
+            for key,_dict in read_file.metadata.items():
+                for key2,value2 in _dict.items():
+                    _file[f"metadata/{key}/{key2}"] = value2
+
+        read_file.close()
+        del read_file
+
+    _file.close()
+    del _file
+
+
 
 
