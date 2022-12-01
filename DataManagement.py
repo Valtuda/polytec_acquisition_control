@@ -5,6 +5,8 @@
 import h5py
 import os
 
+from glob import glob
+
 import numpy as np
 
 class HDF5Writer:
@@ -93,13 +95,16 @@ class HDF5Reader(h5py.File):
 
         self._metadata = self.__reconstruct_dict()
 
-    @property
-    def average_velocity(self):
+    def average_velocity(self,start=0,end=None):
+        # Apparently we can't use self variables in the function definition
+        if end == None:
+            end = self._block_count
+
         arr = np.zeros(self._total_samples,dtype=float)
-        for it in range(self._block_count):
+        for it in range(start,end):
             arr += self.velocity(it)
 
-        return arr/self._block_count
+        return arr/(end-start)
 
     @property
     def metadata(self):
@@ -160,6 +165,7 @@ class HDF5Reader(h5py.File):
         _file.close()
         del _file
 
+## Old function that dealt with single-trace files.
 def series_to_one_file(location,prefix,param_range,postfix=".hdf5"):
     """To convert a series of measurements to a single file, reducing everything to SI units like in the above code."""
     filename = f"{location}/{prefix}{postfix}"
@@ -183,7 +189,7 @@ def series_to_one_file(location,prefix,param_range,postfix=".hdf5"):
 
         subgroup[f"Time"] = read_file.generate_t_array()
         subgroup[f"BaseTime"] = read_file.generate_t_array(freq_factor=False)
-        subgroup[f"avgVelocity"] = read_file.average_velocity
+        subgroup[f"avgVelocity"] = read_file.average_velocity()
 
         if first:
             first = False
@@ -198,6 +204,122 @@ def series_to_one_file(location,prefix,param_range,postfix=".hdf5"):
     _file.close()
     del _file
 
+# HDF5 does not play nice with dictionaries so this is just a quick work-around to make it work nicely.
+def write_simple_dict_to_hdf5_subgroup(subgroup,_dict):
+    for key,value in _dict.items():
+        subgroup[key] = value
+    
 
 
+def recv_gather_to_one_file(location,prefix,postfix=".hdf5"):
+    # What filename will we save to?
+    filename = f"{location}/{prefix}{postfix}"
+
+    # Create this file.
+    _file = h5py.File(filename,"w")
+
+    # Find all files which match the pattern. These will be fused into one file.
+    data_files = glob(f"{location}/{prefix}_*{postfix}")
+
+    # Aux variables for looping over traces
+    first    = True
+    trace_it = 0
+
+    for data_file in data_files:
+        # file_it tracks which shot we're at in this specific file.
+        file_it = 0
+
+        # Read file using the HDF5 reader.
+        read_file = HDF5Reader(data_file)
+
+        # Files in the HDF5 reader are sorted chronologically. We first want to identify how many traces and their metadata.
+        # In the receiver gather format, this is saved in the traces dictionary.
+        src_location  = read_file.metadata["traces"]["receiver_loc"]
+        rcv_locations = read_file.metadata["traces"]["src_locations"]
+
+        # Derive the number of unique traces in this file from the rcv_locations
+        num_traces = len(rcv_locations)
+        shots_per_tr  = read_file.metadata["traces"]["shots_per_point"]
+
+        # If the data is complete, the total number of blocks for the vibrometer should be
+        # the number of traces * number of points. Let's check this. The vib doesn't save if this is not the case.
+        if shots_per_tr*num_traces != read_file.metadata["vibrometer"]["block_count"]:
+            raise IOError(f"The datafile {data_file} does not seem to be complete. Expected: {shots_per_tr*num_traces}. Present: {read_file.metadata['vibrometer']['block_count']}.")
+
+        # If this is the first time this file is written to, we need to write the data structure.
+        if first:
+            first = False  # Don't do this again
+
+            write_simple_dict_to_hdf5_subgroup(_file.create_group("metadata/experiment"),read_file.metadata["experiment"])
+
+            # Devices
+            write_simple_dict_to_hdf5_subgroup(_file.create_group("metadata/devices/laser"),read_file.metadata["laser"])
+            write_simple_dict_to_hdf5_subgroup(_file.create_group("metadata/devices/vibrometer"),read_file.metadata["vibrometer"])
+
+            # If there is galvo or rotator metadata, we write this as well
+            if "galvo" in read_file.metadata.keys():
+                write_simple_dict_to_hdf5_subgroup(_file.create_group("metadata/devices/galvo"),read_file.metadata["galvo"])
+
+            if "rotator" in read_file.metadata.keys():
+                write_simple_dict_to_hdf5_subgroup(_file.create_group("metadata/devices/rotator"),read_file.metadata["rotator"])
+
+            # If there is information about the sample, add it here as well.
+            if "sample" in read_file.metadata.keys():
+                write_simple_dict_to_hdf5_subgroup(_file.create_group("metadata/sample"),read_file.metadata["sample"])
+            else: # Otherwise we create an empty group.
+                _file.create_group("metadata/sample")
+
+            # Create the group for trace metadata, data
+            _file.create_group("data/sample")
+            _file.create_group("data/trace")
+            _file.create_group("metadata/trace")
+
+        # Ok, that concludes organizing the data file. Now onto data copying/output.
+        # For each trace, we make a variable called subgroup.
+        for rcv_location in rcv_locations:
+            # Iterators in the file run between these 2 values.
+            start_num = file_it * shots_per_tr
+            end_num   = (file_it+1) * shots_per_tr
+
+            subgroup = _file.create_group(f"data/trace/{trace_it}")
+            subgroup_metadata = _file.create_group(f"metadata/trace/{trace_it}")
+
+            # We save all the raw data.
+            for num in range(shots_per_tr):
+                subgroup[f"Velocity/{num}"] = read_file[f"Velocity/{num+start_num}"][()] * read_file["Velocity/scalefactor"][()]
+                subgroup[f"Overrange/{num}"] = read_file[f"Velocity/overrange/{num+start_num}"][()]
+                subgroup[f"RSSI/{num}"] = read_file[f"RSSI/{num+start_num}"][()] * read_file["RSSI/scalefactor"][()]
+                subgroup[f"Trigger/{num}"] = read_file[f"Trigger/{num+start_num}"][()]
+
+            # We generate both time arrays and an average velocity array. Note that this is not very efficient but it makes
+            # sharing data a lot easier, and does not take that much space compared to the raw data storage.
+            subgroup[f"Time"] = read_file.generate_t_array()
+            subgroup[f"BaseTime"] = read_file.generate_t_array(freq_factor=False)
+            subgroup[f"avgVelocity"] = read_file.average_velocity(start_num,end_num)
+
+            # That was all the data. Now the metadata.
+            # For now, this just stores source and receiver locations.
+            subgroup_metadata[f"rcv_location"] = rcv_location
+            subgroup_metadata[f"src_location"] = src_location
+
+            # Increment the trace iterator and the file iterator
+            trace_it += 1
+            file_it  += 1
+
+
+        read_file.close()
+        del read_file
+    
+    # At the end of the import, we should write the total number of traces to the experiment metadata.
+    _file["metadata/experiment/total_traces"] = trace_it
+
+    _file.close()
+    del _file
+
+
+
+
+
+
+    
 
