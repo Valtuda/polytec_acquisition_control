@@ -93,7 +93,23 @@ class HDF5Reader(h5py.File):
         self._sample_rate   = self._base_sample_rate/self._freq_factor
         self._block_count  = self["vibrometer__block_count"][()]
 
+
+
         self._metadata = self.__reconstruct_dict()
+
+        self._preexp_shots = 0
+        # Let's see whether there's any background substraction to be done.
+        if "pre_exp_beamdump" in self.metadata["traces"].keys():
+            # If this is true, then we have pre-experiment beamdump traces.
+            self._preexp_shots = self.metadata["traces"]["pre_exp_beamdump"]
+
+        self._postexp_shots = 0
+        # Let's see whether there's any background substraction to be done.
+        if "post_exp_beamdump" in self.metadata["traces"].keys():
+            # If this is true, then we have pre-experiment beamdump traces.
+            self._postexp_shots = self.metadata["traces"]["pre_exp_beamdump"]
+
+        self._background_traces = self._calc_background_traces()
 
     def average_velocity(self,start=0,end=None):
         # Apparently we can't use self variables in the function definition
@@ -105,6 +121,33 @@ class HDF5Reader(h5py.File):
             arr += self.velocity(it)
 
         return arr/(end-start)
+
+    @property
+    def preexp_shots(self):
+        return self._preexp_shots
+
+    @property
+    def postexp_shots(self):
+        return self._postexp_shots
+
+    @property
+    def background_traces(self):
+        return self._background_traces
+
+    def _calc_background_traces(self):
+        # If there is pre-experiment and post-experiment background recordings, this property
+        # can be used to substract them.
+        arr = np.zeros(self._total_samples,dtype=float)
+        if self._preexp_shots > 0:
+            arr += self._preexp_shots * self.average_velocity()
+
+        if self._postexp_shots > 0:
+            arr += self._postexp_shots * self.average_velocity()
+
+        if self._preexp_shots + self._postexp_shots > 0:
+            return arr/(self._preexp_shots+self._postexp_shots)
+        else:
+            return 0
 
     @property
     def metadata(self):
@@ -224,8 +267,13 @@ def recv_gather_to_one_file(location,prefix,postfix=".hdf5"):
     # Aux variables for looping over traces
     first    = True
     trace_it = 0
+    file_num = 0
+
+    print(f"Processing {len(data_files)} files.")
 
     for data_file in data_files:
+        print(f"Entering file {file_num}.")
+
         # file_it tracks which shot we're at in this specific file.
         file_it = 0
 
@@ -234,16 +282,20 @@ def recv_gather_to_one_file(location,prefix,postfix=".hdf5"):
 
         # Files in the HDF5 reader are sorted chronologically. We first want to identify how many traces and their metadata.
         # In the receiver gather format, this is saved in the traces dictionary.
-        src_location  = read_file.metadata["traces"]["receiver_loc"]
-        rcv_locations = read_file.metadata["traces"]["src_locations"]
+        rcv_location  = read_file.metadata["traces"]["receiver_loc"]
+        src_locations = read_file.metadata["traces"]["src_locations"]
 
         # Derive the number of unique traces in this file from the rcv_locations
-        num_traces = len(rcv_locations)
+        num_traces = len(src_locations)
         shots_per_tr  = read_file.metadata["traces"]["shots_per_point"]
+
+        preexp_shots  = read_file.preexp_shots
+        postexp_shots = read_file.postexp_shots
+
 
         # If the data is complete, the total number of blocks for the vibrometer should be
         # the number of traces * number of points. Let's check this. The vib doesn't save if this is not the case.
-        if shots_per_tr*num_traces != read_file.metadata["vibrometer"]["block_count"]:
+        if shots_per_tr*num_traces+preexp_shots+postexp_shots != read_file.metadata["vibrometer"]["block_count"]:
             raise IOError(f"The datafile {data_file} does not seem to be complete. Expected: {shots_per_tr*num_traces}. Present: {read_file.metadata['vibrometer']['block_count']}.")
 
         # If this is the first time this file is written to, we need to write the data structure.
@@ -275,11 +327,34 @@ def recv_gather_to_one_file(location,prefix,postfix=".hdf5"):
             _file.create_group("metadata/trace")
 
         # Ok, that concludes organizing the data file. Now onto data copying/output.
+
+        # Pre-experiment background traces
+        if preexp_shots>0:
+            start_num = 0
+            end_num   = preexp_shots
+
+            subgroup = _file.create_group(f"data/special_trace/pre_experiment_beamdump/{file_num}")
+            subgroup_metadata = _file.create_group(f"metadata/special_trace/pre_experiment_beamdump/{file_num}")
+
+            # We save all the raw data.
+            for num in range(preexp_shots):
+                subgroup[f"Velocity/{num}"] = read_file[f"Velocity/{num+start_num}"][()] * read_file["Velocity/scalefactor"][()]
+                subgroup[f"Overrange/{num}"] = read_file[f"Velocity/overrange/{num+start_num}"][()]
+                subgroup[f"RSSI/{num}"] = read_file[f"RSSI/{num+start_num}"][()] * read_file["RSSI/scalefactor"][()]
+                subgroup[f"Trigger/{num}"] = read_file[f"Trigger/{num+start_num}"][()]
+
+            # We generate both time arrays and an average velocity array. Note that this is not very efficient but it makes
+            # sharing data a lot easier, and does not take that much space compared to the raw data storage.
+            subgroup[f"Time"] = read_file.generate_t_array()
+            subgroup[f"BaseTime"] = read_file.generate_t_array(freq_factor=False)
+            subgroup[f"avgVelocity"] = read_file.average_velocity(start_num,end_num)
+
+
         # For each trace, we make a variable called subgroup.
-        for rcv_location in rcv_locations:
+        for src_location in src_locations:
             # Iterators in the file run between these 2 values.
-            start_num = file_it * shots_per_tr
-            end_num   = (file_it+1) * shots_per_tr
+            start_num = file_it * shots_per_tr + preexp_shots
+            end_num   = (file_it+1) * shots_per_tr + preexp_shots
 
             subgroup = _file.create_group(f"data/trace/{trace_it}")
             subgroup_metadata = _file.create_group(f"metadata/trace/{trace_it}")
@@ -293,9 +368,10 @@ def recv_gather_to_one_file(location,prefix,postfix=".hdf5"):
 
             # We generate both time arrays and an average velocity array. Note that this is not very efficient but it makes
             # sharing data a lot easier, and does not take that much space compared to the raw data storage.
+            # Average velocity now also has background substracted.
             subgroup[f"Time"] = read_file.generate_t_array()
             subgroup[f"BaseTime"] = read_file.generate_t_array(freq_factor=False)
-            subgroup[f"avgVelocity"] = read_file.average_velocity(start_num,end_num)
+            subgroup[f"avgVelocity"] = read_file.average_velocity(start_num,end_num) - read_file.background_traces
 
             # That was all the data. Now the metadata.
             # For now, this just stores source and receiver locations.
@@ -307,9 +383,34 @@ def recv_gather_to_one_file(location,prefix,postfix=".hdf5"):
             file_it  += 1
 
 
+
+    
+        # Post-experiment background traces
+        if postexp_shots>0:
+            start_num = file_it * shots_per_tr + preexp_shots
+            end_num = file_it * shots_per_tr + preexp_shots + postexp_shots
+
+            subgroup = _file.create_group(f"data/special_trace/post_experiment_beamdump/{file_num}")
+            subgroup_metadata = _file.create_group(f"metadata/special_trace/post_experiment_beamdump/{file_num}")
+
+            # We save all the raw data.
+            for num in range(postexp_shots):
+                subgroup[f"Velocity/{num}"] = read_file[f"Velocity/{num+start_num}"][()] * read_file["Velocity/scalefactor"][()]
+                subgroup[f"Overrange/{num}"] = read_file[f"Velocity/overrange/{num+start_num}"][()]
+                subgroup[f"RSSI/{num}"] = read_file[f"RSSI/{num+start_num}"][()] * read_file["RSSI/scalefactor"][()]
+                subgroup[f"Trigger/{num}"] = read_file[f"Trigger/{num+start_num}"][()]
+
+            # We generate both time arrays and an average velocity array. Note that this is not very efficient but it makes
+            # sharing data a lot easier, and does not take that much space compared to the raw data storage.
+            subgroup[f"Time"] = read_file.generate_t_array()
+            subgroup[f"BaseTime"] = read_file.generate_t_array(freq_factor=False)
+            subgroup[f"avgVelocity"] = read_file.average_velocity(start_num,end_num)
+
         read_file.close()
         del read_file
-    
+
+        file_num += 1
+
     # At the end of the import, we should write the total number of traces to the experiment metadata.
     _file["metadata/experiment/total_traces"] = trace_it
 
